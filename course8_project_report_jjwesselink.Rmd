@@ -1,0 +1,113 @@
+---
+title: "Course8_project"
+author: "J.J. Wesselink"
+date: "2026-04-06"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(caret)
+library(randomForest)
+```
+
+## Course 8 Project: predict exercise classe
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. 
+ 
+
+
+```{r data}
+training_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+training_dest_file <- "training_data.csv"
+
+if(! file.exists(training_dest_file)){
+  download.file(training_url, training_dest_file)
+}
+
+test_url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+test_destfile <- "test_data.csv"
+
+if(!file.exists(test_destfile)){
+  download.file(test_url, test_destfile)
+}
+```
+
+## Exploratory Analysis and Preprocessing
+
+You can also embed plots, for example:
+
+```{r exploratory, echo=FALSE}
+train_data <- read.csv(training_dest_file)
+```
+
+Exploration of the train_data data frame reveals that the first 6 variables are unrelated to exercise, so we remove these.
+
+```{r clean}
+str(train_data)
+train <- train_data[, 6:ncol(train_data)]
+```
+
+Split the data into 70% training and 30% testing set
+```{r split}
+set.seed(1)
+inTrain <- createDataPartition(y = train$classe, p = 0.7, list = FALSE)
+training <- train[inTrain, ]
+testing <- train[-inTrain, ]
+```
+
+3. Remove the variables with a lot of similarities (near zero variance) as they are considered to have less predictive power.
+```{r}
+near_zero_var <- nearZeroVar(train, saveMetrics = TRUE)
+keep<- row.names(near_zero_var[near_zero_var$nzv == FALSE, ])
+training <- training[, keep]
+```
+
+4. Remove the variables with all NAs, they give no information.
+```{r}
+training <- training[, colSums(is.na(training)) == 0]
+dim(training)
+```
+This is a rather rigorous reduction of features, but there are still more than 50 features after removal of the columns that have only NAs.
+
+### Model training
+1. Set up 5-fold cross validation for training
+```{r}
+control_model <- trainControl(method = 'cv', number = 5)
+```
+
+2. Fit a model with random forests
+```{r}
+set.seed(1)
+random_forest_model <- train(classe ~. , data = training, method = 'rf', trControl = control_model)
+```
+- Read the summary of the model built with random forests
+```{r}
+random_forest_model$finalModel
+```
+- Predict with the validation set and check the confusion matrix and accuracy
+```{r}
+rf_prediction <- predict(random_forest_model, newdata = testing)
+confusionMatrix(rf_prediction, as.factor(testing$classe))$table
+confusionMatrix(rf_prediction, as.factor(testing$classe))$overall[1]
+```
+The accuracy is ~99.8% under 5-fold cross validation
+
+3. Fit a model with gradient boosting method
+```{r}
+gbm_model <- train(classe ~., data = training, method = 'gbm', trControl = control_model, verbose = FALSE)
+```
+- Read the summary of the model built with gbm
+```{r}
+gbm_model$finalModel
+```
+- Predict with the validation set and check the confusion matrix and accuracy
+```{r}
+gbm_prediction <- predict(gbm_model, newdata = testing)
+confusionMatrix(gbm_prediction, as.factor(testing$classe))$table
+confusionMatrix(gbm_prediction, as.factor(testing$classe))$overall[1]
+```
+The accuracy is ~98.4% under 5-fold cross validation
